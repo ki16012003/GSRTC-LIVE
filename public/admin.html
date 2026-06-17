@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GSRTC Landmark Admin</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <style>
+    html, body, #map { height: 100%; margin: 0; }
+    #panel {
+      position: absolute;
+      top: 10px;
+      left: 50px;
+      z-index: 1000;
+      background: white;
+      padding: 10px 14px;
+      border-radius: 4px;
+      font-family: sans-serif;
+      font-size: 13px;
+      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+      max-width: 280px;
+    }
+    #panel input {
+      width: 100%;
+      box-sizing: border-box;
+      margin: 4px 0;
+      padding: 4px;
+      font-size: 13px;
+    }
+    #panel button {
+      margin-top: 4px;
+      padding: 4px 8px;
+      font-size: 13px;
+      cursor: pointer;
+    }
+    #status { margin-top: 6px; color: #555; }
+    .landmark-popup button { margin-top: 4px; }
+    #fleetPanel {
+      position: absolute;
+      top: 10px;
+      right: 50px;
+      z-index: 1000;
+      background: white;
+      padding: 10px 14px;
+      border-radius: 4px;
+      font-family: sans-serif;
+      font-size: 13px;
+      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+      max-width: 260px;
+    }
+    #fleetPanel input {
+      width: 100%;
+      box-sizing: border-box;
+      margin: 4px 0;
+      padding: 4px;
+      font-size: 13px;
+    }
+    #fleetPanel button {
+      margin-top: 4px;
+      padding: 4px 8px;
+      font-size: 13px;
+      cursor: pointer;
+    }
+    #fleetList { margin-top: 8px; }
+    #fleetList div { display: flex; justify-content: space-between; align-items: center; padding: 2px 0; }
+    #fleetList button { margin: 0; }
+    #fleetStatus { margin-top: 6px; color: #555; }
+  </style>
+</head>
+<body>
+  <div id="panel">
+    <strong>Add Landmark</strong>
+    <div>Click the map to pick a location.</div>
+    <input type="text" id="lat" placeholder="Latitude" readonly />
+    <input type="text" id="lon" placeholder="Longitude" readonly />
+    <input type="text" id="name" placeholder="Name (e.g. Mundra Bus Stand)" />
+    <input type="number" id="radius" placeholder="Radius in meters (default 500)" />
+    <button type="button" id="saveBtn">Save Landmark</button>
+    <div id="status"></div>
+  </div>
+  <div id="fleetPanel">
+    <strong>Fleet (Live Map App)</strong>
+    <div>Buses shown on /fleet.html and the Android app.</div>
+    <input type="text" id="fleetVehicleNo" placeholder="Vehicle number (e.g. GJ18Z6224)" />
+    <input type="text" id="fleetLabel" placeholder="Label (optional, e.g. Bhuj-Mundra)" />
+    <button type="button" id="fleetAddBtn">Add Bus</button>
+    <div id="fleetList"></div>
+    <div id="fleetStatus"></div>
+  </div>
+  <div id="map"></div>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="/admin.js"></script>
+</body>
+</html>

@@ -1,0 +1,173 @@
+{
+  "_comment": "Named local spots shown as 'Near <name>' when the bus is within radiusMeters of that point. To add one: open Google Maps, long-press the spot (or right-click 'What's here?' on desktop) to get its latitude/longitude, then add an entry below. Entries with latitude/longitude set to null are ignored until filled in.",
+  "landmarks": [
+    {
+      "name": "Mundra Bus Stand",
+      "latitude": null,
+      "longitude": null,
+      "radiusMeters": 500
+    },
+    {
+      "name": "Darbar Bungalow, Mundra",
+      "latitude": null,
+      "longitude": null,
+      "radiusMeters": 500
+    },
+    {
+      "name": "Adarsh Tower",
+      "latitude": 22.8429005,
+      "longitude": 69.7235815,
+      "radiusMeters": 100
+    },
+    {
+      "name": "shakti nagar",
+      "latitude": 22.84027,
+      "longitude": 69.7081694,
+      "radiusMeters": 100
+    },
+    {
+      "name": "dark bunglow",
+      "latitude": 22.8403286,
+      "longitude": 69.7184044,
+      "radiusMeters": 100
+    },
+    {
+      "name": "mundra bus stand",
+      "latitude": 22.8395181,
+      "longitude": 69.7240709,
+      "radiusMeters": 200
+    },
+    {
+      "name": "New Mundra",
+      "latitude": 22.8397553,
+      "longitude": 69.7138433,
+      "radiusMeters": 100
+    },
+    {
+      "name": "Nana kapaya",
+      "latitude": 22.844718,
+      "longitude": 69.7059789,
+      "radiusMeters": 100
+    },
+    {
+      "name": "mota kapaya",
+      "latitude": 22.8779422,
+      "longitude": 69.7035341,
+      "radiusMeters": 100
+    },
+    {
+      "name": "on the way to mota kapaya",
+      "latitude": 22.8611421,
+      "longitude": 69.707183,
+      "radiusMeters": 500
+    },
+    {
+      "name": "next stop pragpar",
+      "latitude": 22.8885674,
+      "longitude": 69.7003421,
+      "radiusMeters": 200
+    },
+    {
+      "name": "pragpar",
+      "latitude": 22.8964728,
+      "longitude": 69.6969089,
+      "radiusMeters": 300
+    },
+    {
+      "name": "hanuman tekri",
+      "latitude": 22.9772301,
+      "longitude": 69.6426444,
+      "radiusMeters": 100
+    },
+    {
+      "name": "beraja patiyu",
+      "latitude": 23.0109384,
+      "longitude": 69.6271512,
+      "radiusMeters": 100
+    },
+    {
+      "name": "tappar patiyu",
+      "latitude": 23.0150846,
+      "longitude": 69.6245326,
+      "radiusMeters": 100
+    },
+    {
+      "name": "babiya",
+      "latitude": 23.0194281,
+      "longitude": 69.6215705,
+      "radiusMeters": 100
+    },
+    {
+      "name": "HJD",
+      "latitude": 23.053357,
+      "longitude": 69.6073194,
+      "radiusMeters": 100
+    },
+    {
+      "name": "Gajod Road",
+      "latitude": 23.0758194,
+      "longitude": 69.5972968,
+      "radiusMeters": 100
+    },
+    {
+      "name": "kera bus stand",
+      "latitude": 23.0807332,
+      "longitude": 69.5966529,
+      "radiusMeters": 50
+    },
+    {
+      "name": "Kera High School",
+      "latitude": 23.0854693,
+      "longitude": 69.5972539,
+      "radiusMeters": 200
+    },
+    {
+      "name": "Baladiya",
+      "latitude": 23.0977033,
+      "longitude": 69.6110767,
+      "radiusMeters": 100
+    },
+    {
+      "name": "Baladiya Hospital",
+      "latitude": 23.0985441,
+      "longitude": 69.6148101,
+      "radiusMeters": 100
+    },
+    {
+      "name": "baladiya Mahadev",
+      "latitude": 23.1021155,
+      "longitude": 69.6146813,
+      "radiusMeters": 300
+    },
+    {
+      "name": "baladiya - bharapal bridge",
+      "latitude": 23.1160857,
+      "longitude": 69.623431,
+      "radiusMeters": 500
+    },
+    {
+      "name": "baladiya gau sara",
+      "latitude": 23.1087062,
+      "longitude": 69.6190321,
+      "radiusMeters": 300
+    },
+    {
+      "name": "bharapa",
+      "latitude": 23.1296257,
+      "longitude": 69.6323562,
+      "radiusMeters": 400
+    },
+    {
+      "name": "chandra villa",
+      "latitude": 23.1378555,
+      "longitude": 69.6352315,
+      "radiusMeters": 500
+    },
+    {
+      "name": "ashapura ( baraiya )",
+      "latitude": 22.9260852,
+      "longitude": 69.6739841,
+      "radiusMeters": 200
+    }
+  ]
+}
