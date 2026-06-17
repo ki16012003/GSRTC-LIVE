@@ -6,78 +6,118 @@
   <title>GSRTC Live Fleet Map</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <style>
-    html, body, #map { height: 100%; margin: 0; }
-    #status {
-      position: absolute;
-      bottom: 10px;
-      left: 10px;
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; height: 100vh; display: flex; flex-direction: column; }
+    nav {
+      background: #0f172a;
+      padding: 0 24px;
+      height: 52px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
       z-index: 1000;
-      background: rgba(255,255,255,0.9);
-      padding: 4px 10px;
-      border-radius: 4px;
-      font-family: sans-serif;
-      font-size: 12px;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.2);
     }
-    #controls {
+    nav .brand { color: #e2e8f0; font-size: 16px; font-weight: 700; letter-spacing: -0.3px; display: flex; align-items: center; gap: 8px; }
+    nav .brand span { color: #60a5fa; }
+    nav .links { display: flex; gap: 4px; }
+    nav .links a { color: #94a3b8; text-decoration: none; font-size: 13px; padding: 6px 14px; border-radius: 6px; transition: all 0.15s; }
+    nav .links a:hover { color: #e2e8f0; background: rgba(255,255,255,0.06); }
+    nav .links a.active { color: #60a5fa; background: rgba(96,165,250,0.1); }
+    #map { flex: 1; }
+    .overlay {
       position: absolute;
-      top: 10px;
-      left: 50px;
+      top: 64px;
+      left: 50%;
+      transform: translateX(-50%);
       z-index: 1000;
       display: flex;
-      gap: 6px;
+      gap: 8px;
       align-items: center;
+      background: rgba(15,23,42,0.85);
+      backdrop-filter: blur(8px);
+      padding: 8px 14px;
+      border-radius: 12px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.25);
     }
-    #search {
-      padding: 6px 10px;
-      border: 1px solid #ccc;
-      border-radius: 4px;
+    .overlay input {
+      padding: 7px 12px;
+      border: 1.5px solid rgba(255,255,255,0.15);
+      border-radius: 8px;
       font-size: 13px;
       width: 220px;
       outline: none;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+      background: rgba(255,255,255,0.08);
+      color: #e2e8f0;
+      transition: border-color 0.15s;
     }
-    #search:focus { border-color: #1a73e8; }
-    .btn {
-      padding: 6px 12px;
-      border: 1px solid #ccc;
-      border-radius: 4px;
-      background: white;
+    .overlay input::placeholder { color: #64748b; }
+    .overlay input:focus { border-color: #60a5fa; }
+    .overlay button {
+      padding: 7px 14px;
+      border: none;
+      border-radius: 8px;
       font-size: 13px;
+      font-weight: 600;
       cursor: pointer;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.2);
-    }
-    .btn:hover { background: #f0f0f0; }
-    #count {
-      margin-left: 4px;
-      font-family: sans-serif;
-      font-size: 12px;
-      color: #555;
-      background: rgba(255,255,255,0.9);
-      padding: 4px 8px;
-      border-radius: 4px;
-    }
-    .bus-label {
+      background: #2563eb;
       color: #fff;
-      padding: 2px 6px;
-      border-radius: 3px;
-      font-weight: bold;
+      transition: background 0.15s;
+    }
+    .overlay button:hover { background: #1d4ed8; }
+    .overlay .count {
       font-size: 12px;
+      font-weight: 500;
+      color: #94a3b8;
+      padding: 0 4px;
       white-space: nowrap;
     }
-    .bus-label.running { background: #1a9e4d; }
-    .bus-label.idle { background: #e08a00; }
-    .bus-label.nosignal { background: #8a8a8a; }
+    .status-bar {
+      position: absolute;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 1000;
+      background: rgba(15,23,42,0.85);
+      backdrop-filter: blur(8px);
+      color: #e2e8f0;
+      padding: 8px 18px;
+      border-radius: 99px;
+      font-size: 13px;
+      font-weight: 500;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+      pointer-events: none;
+      white-space: nowrap;
+    }
+    .bus-label {
+      padding: 3px 8px;
+      border-radius: 4px;
+      font-weight: 600;
+      font-size: 12px;
+      white-space: nowrap;
+      border: 1.5px solid rgba(255,255,255,0.4);
+    }
+    .bus-label.running { background: #16a34a; }
+    .bus-label.idle { background: #d97706; }
+    .bus-label.nosignal { background: #64748b; }
   </style>
 </head>
 <body>
-  <div id="controls">
-    <input type="text" id="search" placeholder="Search bus no, route, depot..." />
-    <button class="btn" id="fitBtn">Fit all</button>
-    <span id="count"></span>
-  </div>
-  <div id="status">Loading...</div>
+  <nav>
+    <div class="brand">GSRTC <span>Live</span></div>
+    <div class="links">
+      <a href="/">Map</a>
+      <a href="/fleet" class="active">Fleet</a>
+      <a href="/admin">Admin</a>
+    </div>
+  </nav>
   <div id="map"></div>
+  <div class="overlay">
+    <input type="text" id="search" placeholder="Search bus, route, depot..." />
+    <button id="fitBtn">Fit all</button>
+    <span class="count" id="count"></span>
+  </div>
+  <div class="status-bar" id="status">Loading...</div>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="/fleet.js"></script>
 </body>
