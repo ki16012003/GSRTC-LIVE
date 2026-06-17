@@ -1,4 +1,5 @@
 const GSRTC_API = 'https://live.gsrtc.org/api/vehicle/tooltip';
+const CONCURRENCY = 8;
 
 const map = L.map('map').setView([23.0, 69.65], 10);
 
@@ -6,14 +7,6 @@ L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r
   maxZoom: 20,
   attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
 }).addTo(map);
-
-const busIcon = L.divIcon({
-  className: '',
-  html: '<svg width="32" height="32" viewBox="0 0 24 24" fill="none"><rect x="2" y="4" width="20" height="14" rx="3" fill="currentColor" stroke="#fff" stroke-width="1.5"/><rect x="4" y="9" width="16" height="6" rx="1" fill="rgba(0,0,0,0.2)"/><circle cx="7" cy="18" r="2" fill="currentColor" stroke="#fff" stroke-width="1.5"/><circle cx="17" cy="18" r="2" fill="currentColor" stroke="#fff" stroke-width="1.5"/><rect x="9" y="6" width="6" height="2" rx="1" fill="rgba(255,255,255,0.4)"/></svg>',
-  iconSize: [32, 32],
-  iconAnchor: [16, 16],
-  popupAnchor: [0, -16],
-});
 
 const markers = new Map();
 const vehicleCache = new Map();
@@ -23,6 +16,8 @@ const routeFilter = document.getElementById('routeFilter');
 const countEl = document.getElementById('count');
 const goBtn = document.getElementById('goBtn');
 const fitBtn = document.getElementById('fitBtn');
+const progressWrap = document.getElementById('progressWrap');
+const progressBar = document.getElementById('progressBar');
 
 let authToken = null;
 
@@ -42,6 +37,8 @@ function formatVehicleNo(v) {
   return m ? m.slice(1).join('-').toUpperCase() : v;
 }
 
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
 async function fetchToken() {
   const res = await fetch('/api/token');
   if (!res.ok) throw new Error('Failed to get token');
@@ -59,14 +56,14 @@ async function fetchVehicleData(vehicleNo) {
   return res.json();
 }
 
-function popupHtml(v, label) {
-  const statusText = vehicleStatus(v);
-  const statusLabel = statusText === 'running' ? 'Running' : statusText === 'idle' ? 'Stopped' : 'No Signal';
-  const statusColor = colorForStatus(statusText);
+function popupHtml(v) {
+  const st = vehicleStatus(v);
+  const sl = st === 'running' ? 'Running' : st === 'idle' ? 'Stopped' : 'No Signal';
+  const sc = colorForStatus(st);
   return '<div style="min-width:200px;font-size:13px;line-height:1.6">' +
     '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">' +
-      '<span style="font-weight:700;font-size:14px">' + (label || formatVehicleNo(v.vehicleNo)) + '</span>' +
-      '<span style="font-size:11px;font-weight:600;padding:1px 8px;border-radius:99px;background:' + statusColor + '20;color:' + statusColor + '">' + statusLabel + '</span>' +
+      '<span style="font-weight:700;font-size:14px">' + formatVehicleNo(v.vehicleNo) + '</span>' +
+      '<span style="font-size:11px;font-weight:600;padding:1px 8px;border-radius:99px;background:' + sc + '20;color:' + sc + '">' + sl + '</span>' +
     '</div>' +
     '<div style="color:#64748b">' + v.vehicleNo + '</div>' +
     '<hr style="border:none;border-top:1px solid #e2e8f0;margin:6px 0">' +
@@ -78,17 +75,44 @@ function popupHtml(v, label) {
     '</div>';
 }
 
+function upsertMarker(raw) {
+  const lat = parseFloat(raw.latitude);
+  const lon = parseFloat(raw.longitude);
+  if (isNaN(lat) || isNaN(lon)) return;
+  const status = vehicleStatus(raw);
+  const color = colorForStatus(status);
+  const label = formatVehicleNo(raw.vehicleNo);
+  if (markers.has(raw.vehicleNo)) {
+    const marker = markers.get(raw.vehicleNo);
+    marker.setLatLng([lat, lon]);
+    marker.setPopupContent(popupHtml(raw));
+    marker.setTooltipContent(label);
+  } else {
+    const icon = L.divIcon({
+      className: '',
+      html: '<svg width="32" height="32" viewBox="0 0 24 24" fill="none" style="color:' + color + '"><rect x="2" y="4" width="20" height="14" rx="3" fill="currentColor" stroke="#fff" stroke-width="1.5"/><rect x="4" y="9" width="16" height="6" rx="1" fill="rgba(0,0,0,0.2)"/><circle cx="7" cy="18" r="2" fill="currentColor" stroke="#fff" stroke-width="1.5"/><circle cx="17" cy="18" r="2" fill="currentColor" stroke="#fff" stroke-width="1.5"/><rect x="9" y="6" width="6" height="2" rx="1" fill="rgba(255,255,255,0.4)"/></svg>',
+      iconSize: [32, 32],
+      iconAnchor: [16, 16],
+      popupAnchor: [0, -16],
+    });
+    const marker = L.marker([lat, lon], { icon })
+      .addTo(map)
+      .bindPopup(popupHtml(raw))
+      .bindTooltip(label, { permanent: true, direction: 'top', className: 'bus-label ' + status, offset: [0, -10] });
+    markers.set(raw.vehicleNo, marker);
+  }
+  vehicleCache.set(raw.vehicleNo, raw);
+}
+
 function updateUI() {
   const routeQ = routeFilter.value.trim().toLowerCase();
-  const searchQ = '';
   let visible = 0;
   for (const [vehicleNo, marker] of markers) {
     const v = vehicleCache.get(vehicleNo);
     if (!v) continue;
-    const routeMatch = !routeQ || (v.routeName || '').toLowerCase().includes(routeQ);
-    const show = routeMatch;
-    if (show && !map.hasLayer(marker)) { marker.addTo(map); visible++; }
-    else if (show) { visible++; }
+    const match = !routeQ || (v.routeName || '').toLowerCase().includes(routeQ);
+    if (match && !map.hasLayer(marker)) { marker.addTo(map); visible++; }
+    else if (match) { visible++; }
     else if (map.hasLayer(marker)) { map.removeLayer(marker); }
   }
   countEl.textContent = visible + ' / ' + markers.size + ' buses';
@@ -102,59 +126,48 @@ function fitAll() {
 }
 
 function clearMap() {
-  for (const [vno, marker] of markers) { map.removeLayer(marker); }
+  for (const m of markers.values()) map.removeLayer(m);
   markers.clear();
   vehicleCache.clear();
 }
 
 async function search(vehicleNos) {
-  if (!authToken) { try { await fetchToken(); } catch { return; } }
+  if (!authToken) try { await fetchToken(); } catch { return; }
   if (!vehicleNos || vehicleNos.length === 0) return;
-  statusEl.textContent = 'Fetching ' + vehicleNos.length + ' bus(es)...';
-  const results = await Promise.allSettled(vehicleNos.map(v => fetchVehicleData(v)));
-  const seen = new Set();
-  for (let i = 0; i < results.length; i++) {
-    const r = results[i];
-    if (r.status !== 'fulfilled' || !r.value) continue;
-    const raw = r.value;
-    const lat = parseFloat(raw.latitude);
-    const lon = parseFloat(raw.longitude);
-    if (isNaN(lat) || isNaN(lon)) continue;
-    seen.add(raw.vehicleNo);
-    vehicleCache.set(raw.vehicleNo, raw);
-    const status = vehicleStatus(raw);
-    const displayLabel = formatVehicleNo(raw.vehicleNo);
-    const color = colorForStatus(status);
-    if (markers.has(raw.vehicleNo)) {
-      const marker = markers.get(raw.vehicleNo);
-      marker.setLatLng([lat, lon]);
-      marker.setPopupContent(popupHtml(raw, ''));
-      marker.setTooltipContent(displayLabel);
-      marker.getElement().querySelector('svg')?.style?.setProperty('color', color);
-    } else {
-      const customIcon = L.divIcon({
-        className: '',
-        html: '<svg width="32" height="32" viewBox="0 0 24 24" fill="none" style="color:' + color + '"><rect x="2" y="4" width="20" height="14" rx="3" fill="currentColor" stroke="#fff" stroke-width="1.5"/><rect x="4" y="9" width="16" height="6" rx="1" fill="rgba(0,0,0,0.2)"/><circle cx="7" cy="18" r="2" fill="currentColor" stroke="#fff" stroke-width="1.5"/><circle cx="17" cy="18" r="2" fill="currentColor" stroke="#fff" stroke-width="1.5"/><rect x="9" y="6" width="6" height="2" rx="1" fill="rgba(255,255,255,0.4)"/></svg>',
-        iconSize: [32, 32],
-        iconAnchor: [16, 16],
-        popupAnchor: [0, -16],
-      });
-      const marker = L.marker([lat, lon], { icon: customIcon })
-        .addTo(map)
-        .bindPopup(popupHtml(raw, ''))
-        .bindTooltip(displayLabel, {
-          permanent: true, direction: 'top',
-          className: 'bus-label ' + status, offset: [0, -10],
-        });
-      markers.set(raw.vehicleNo, marker);
+
+  const queue = [...vehicleNos];
+  let done = 0;
+  const total = queue.length;
+
+  statusEl.textContent = '0/' + total + ' — fetching...';
+  goBtn.disabled = true;
+  progressWrap.classList.add('active');
+  progressBar.style.width = '0%';
+
+  async function worker() {
+    while (queue.length) {
+      const vno = queue.shift();
+      try {
+        const raw = await fetchVehicleData(vno);
+        if (raw) upsertMarker(raw);
+      } catch {}
+      done++;
+      const pct = Math.round((done / total) * 100);
+      progressBar.style.width = pct + '%';
+      statusEl.textContent = done + '/' + total + ' (' + pct + '%) — fetching...';
+      if (done % 5 === 0 || done === total) updateUI();
     }
   }
-  for (const [vehicleNo, marker] of markers) {
-    if (!seen.has(vehicleNo)) { map.removeLayer(marker); markers.delete(vehicleNo); vehicleCache.delete(vehicleNo); }
-  }
+
+  const workers = Array.from({ length: Math.min(CONCURRENCY, total) }, () => worker());
+  await Promise.all(workers);
+
+  goBtn.disabled = false;
+  progressWrap.classList.remove('active');
+  for (const [vno, m] of markers) { if (!vehicleCache.has(vno)) map.removeLayer(m); }
   updateUI();
   const visible = [...markers.values()].filter(m => map.hasLayer(m)).length;
-  statusEl.textContent = visible + ' bus(es) on map — updated ' + new Date().toLocaleTimeString();
+  statusEl.textContent = visible + ' bus(es) on map — ' + new Date().toLocaleTimeString();
 }
 
 async function doSearch() {

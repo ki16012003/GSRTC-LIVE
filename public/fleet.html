@@ -101,6 +101,27 @@
       pointer-events: none;
       white-space: nowrap;
     }
+    .progress-wrap {
+      position: absolute;
+      top: 120px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 999;
+      width: 200px;
+      height: 4px;
+      background: rgba(255,255,255,0.1);
+      border-radius: 2px;
+      overflow: hidden;
+      display: none;
+    }
+    .progress-wrap.active { display: block; }
+    .progress-bar {
+      height: 100%;
+      width: 0%;
+      background: #60a5fa;
+      border-radius: 2px;
+      transition: width 0.2s;
+    }
     .bus-label {
       padding: 3px 8px;
       border-radius: 4px;
@@ -152,6 +173,7 @@
     <span class="count" id="count"></span>
     <div class="hint">Enter comma-separated bus numbers, or leave blank to load fleet list</div>
   </div>
+  <div class="progress-wrap" id="progressWrap"><div class="progress-bar" id="progressBar"></div></div>
   <div class="status-bar" id="status">Enter bus numbers above and click Go</div>
   <div class="legend">
     <div class="legend-item"><span class="legend-dot running"></span> Running</div>
