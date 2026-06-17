@@ -3,13 +3,27 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>GSRTC Landmark Admin</title>
+  <title>GSRTC Admin</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <style>
     html, body, #map { height: 100%; margin: 0; }
+    #readonlyBanner {
+      display: none;
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      z-index: 1001;
+      background: #fff3cd;
+      color: #856404;
+      padding: 8px 16px;
+      font-family: sans-serif;
+      font-size: 13px;
+      text-align: center;
+      border-bottom: 1px solid #ffc107;
+    }
+    #readonlyBanner a { color: #533f03; font-weight: bold; }
     #panel {
       position: absolute;
-      top: 10px;
+      top: 50px;
       left: 50px;
       z-index: 1000;
       background: white;
@@ -20,24 +34,14 @@
       box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
       max-width: 280px;
     }
-    #panel input {
-      width: 100%;
-      box-sizing: border-box;
-      margin: 4px 0;
-      padding: 4px;
-      font-size: 13px;
-    }
-    #panel button {
-      margin-top: 4px;
-      padding: 4px 8px;
-      font-size: 13px;
-      cursor: pointer;
-    }
+    #panel input { width: 100%; box-sizing: border-box; margin: 4px 0; padding: 4px; font-size: 13px; }
+    #panel button { margin-top: 4px; padding: 4px 8px; font-size: 13px; cursor: pointer; }
+    #panel button:disabled { opacity: 0.5; cursor: not-allowed; }
     #status { margin-top: 6px; color: #555; }
     .landmark-popup button { margin-top: 4px; }
     #fleetPanel {
       position: absolute;
-      top: 10px;
+      top: 50px;
       right: 50px;
       z-index: 1000;
       background: white;
@@ -48,19 +52,9 @@
       box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
       max-width: 260px;
     }
-    #fleetPanel input {
-      width: 100%;
-      box-sizing: border-box;
-      margin: 4px 0;
-      padding: 4px;
-      font-size: 13px;
-    }
-    #fleetPanel button {
-      margin-top: 4px;
-      padding: 4px 8px;
-      font-size: 13px;
-      cursor: pointer;
-    }
+    #fleetPanel input { width: 100%; box-sizing: border-box; margin: 4px 0; padding: 4px; font-size: 13px; }
+    #fleetPanel button { margin-top: 4px; padding: 4px 8px; font-size: 13px; cursor: pointer; }
+    #fleetPanel button:disabled { opacity: 0.5; cursor: not-allowed; }
     #fleetList { margin-top: 8px; }
     #fleetList div { display: flex; justify-content: space-between; align-items: center; padding: 2px 0; }
     #fleetList button { margin: 0; }
@@ -68,8 +62,9 @@
   </style>
 </head>
 <body>
+  <div id="readonlyBanner"></div>
   <div id="panel">
-    <strong>Add Landmark</strong>
+    <strong>Landmarks</strong>
     <div>Click the map to pick a location.</div>
     <input type="text" id="lat" placeholder="Latitude" readonly />
     <input type="text" id="lon" placeholder="Longitude" readonly />
@@ -79,8 +74,8 @@
     <div id="status"></div>
   </div>
   <div id="fleetPanel">
-    <strong>Fleet (Live Map App)</strong>
-    <div>Buses shown on /fleet.html and the Android app.</div>
+    <strong>Fleet</strong>
+    <div>Buses shown on /fleet.html</div>
     <input type="text" id="fleetVehicleNo" placeholder="Vehicle number (e.g. GJ18Z6224)" />
     <input type="text" id="fleetLabel" placeholder="Label (optional, e.g. Bhuj-Mundra)" />
     <button type="button" id="fleetAddBtn">Add Bus</button>

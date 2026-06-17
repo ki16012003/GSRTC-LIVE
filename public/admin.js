@@ -42,6 +42,8 @@ map.whenReady(() => {
   if (!statusEl.textContent) setStatus('Map ready. Click anywhere to pick a location.');
 });
 
+let readOnly = false;
+
 async function loadLandmarks() {
   for (const marker of landmarkMarkers) map.removeLayer(marker);
   landmarkMarkers.length = 0;
@@ -68,10 +70,12 @@ async function loadLandmarks() {
     container.className = 'landmark-popup';
     container.innerHTML = `<b>${landmark.name}</b><br>Radius: ${landmark.radiusMeters || 500}m<br>`;
 
-    const deleteBtn = document.createElement('button');
-    deleteBtn.textContent = 'Delete';
-    deleteBtn.onclick = () => deleteLandmark(index);
-    container.appendChild(deleteBtn);
+    if (!readOnly) {
+      const deleteBtn = document.createElement('button');
+      deleteBtn.textContent = 'Delete';
+      deleteBtn.onclick = () => deleteLandmark(index);
+      container.appendChild(deleteBtn);
+    }
 
     marker.bindPopup(container);
     landmarkMarkers.push(marker, circle);
@@ -85,7 +89,9 @@ async function deleteLandmark(index) {
 
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
-    setStatus(data.error || `Failed to delete (HTTP ${res.status})`, true);
+    setStatus(data.editUrl
+      ? `Edit the JSON file directly on GitHub to delete landmarks: ${data.editUrl}`
+      : (data.error || `Failed to delete (HTTP ${res.status})`), true);
     return;
   }
 
@@ -110,7 +116,9 @@ saveBtn.addEventListener('click', async () => {
 
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
-    setStatus(data.error || `Failed to save (HTTP ${res.status})`, true);
+    setStatus(data.editUrl
+      ? `Edit the JSON file directly on GitHub to add landmarks: ${data.editUrl}`
+      : (data.error || `Failed to save (HTTP ${res.status})`), true);
     return;
   }
 
@@ -153,12 +161,16 @@ async function loadFleet() {
     const text = document.createElement('span');
     text.textContent = v.label ? `${v.vehicleNo} (${v.label})` : v.vehicleNo;
 
-    const deleteBtn = document.createElement('button');
-    deleteBtn.textContent = 'Remove';
-    deleteBtn.onclick = () => deleteFleetVehicle(index);
+    if (!readOnly) {
+      const deleteBtn = document.createElement('button');
+      deleteBtn.textContent = 'Remove';
+      deleteBtn.onclick = () => deleteFleetVehicle(index);
+      row.appendChild(text);
+      row.appendChild(deleteBtn);
+    } else {
+      row.appendChild(text);
+    }
 
-    row.appendChild(text);
-    row.appendChild(deleteBtn);
     fleetListEl.appendChild(row);
   });
 
@@ -169,7 +181,9 @@ async function deleteFleetVehicle(index) {
   const res = await fetch(`/api/fleet/${index}`, { method: 'DELETE' });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
-    setFleetStatus(data.error || `Failed to remove (HTTP ${res.status})`, true);
+    setFleetStatus(data.editUrl
+      ? `Edit the JSON file on GitHub to remove buses: ${data.editUrl}`
+      : (data.error || `Failed to remove (HTTP ${res.status})`), true);
     return;
   }
   await loadFleet();
@@ -189,7 +203,9 @@ fleetAddBtn.addEventListener('click', async () => {
 
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
-    setFleetStatus(data.error || `Failed to add (HTTP ${res.status})`, true);
+    setFleetStatus(data.editUrl
+      ? `Edit the JSON file on GitHub to add buses: ${data.editUrl}`
+      : (data.error || `Failed to add (HTTP ${res.status})`), true);
     return;
   }
 
@@ -198,4 +214,22 @@ fleetAddBtn.addEventListener('click', async () => {
   await loadFleet();
 });
 
+async function checkWritable() {
+  const res = await fetch('/api/fleet', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+  if (res.status === 503) {
+    readOnly = true;
+    const data = await res.json();
+    const banner = document.getElementById('readonlyBanner');
+    if (banner && data.editUrl) {
+      banner.innerHTML = `&#128274; Read-only mode. Edit <a href="${data.editUrl}" target="_blank">JSON files on GitHub</a> to make changes.`;
+      banner.style.display = 'block';
+    }
+    saveBtn.disabled = true;
+    saveBtn.title = 'Read-only mode — edit on GitHub instead';
+    fleetAddBtn.disabled = true;
+    fleetAddBtn.title = 'Read-only mode — edit on GitHub instead';
+  }
+}
+
+checkWritable();
 loadFleet();
