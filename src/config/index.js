@@ -17,7 +17,10 @@ const config = {
     .filter(Boolean),
   ADMIN_USER: process.env.ADMIN_USER || 'admin',
   ADMIN_PASS: process.env.ADMIN_PASS || 'admin',
+  GITHUB_TOKEN: process.env.GITHUB_TOKEN || '',
   GITHUB_REPO: process.env.GITHUB_REPO || '',
+  GITHUB_BRANCH: process.env.GITHUB_BRANCH || 'master',
+  VERCEL_DEPLOY_HOOK: process.env.VERCEL_DEPLOY_HOOK || '',
 };
 
 module.exports = config;

@@ -35,20 +35,54 @@ function requireAdminAuth(req, res, next) {
   res.status(401).send('Authentication required');
 }
 
-function canWriteJson() {
+async function pushFileToGitHub(fileName, filePath) {
+  const { GITHUB_TOKEN, GITHUB_REPO, GITHUB_BRANCH } = config;
+  if (!GITHUB_TOKEN || !GITHUB_REPO) return;
+
+  const content = fs.readFileSync(filePath, 'utf8');
+
+  let sha = null;
   try {
-    const testPath = path.join(__dirname, '..', 'src', 'config', '.write-test');
-    fs.writeFileSync(testPath, 'test', 'utf8');
-    fs.unlinkSync(testPath);
-    return true;
-  } catch {
-    return false;
+    const getRes = await fetch(
+      `https://api.github.com/repos/${GITHUB_REPO}/contents/src/config/${fileName}?ref=${GITHUB_BRANCH}`,
+      { headers: { Authorization: `Bearer ${GITHUB_TOKEN}`, Accept: 'application/vnd.github.v3+json' } }
+    );
+    if (getRes.ok) {
+      const existing = await getRes.json();
+      sha = existing.sha;
+    }
+  } catch { }
+
+  await fetch(
+    `https://api.github.com/repos/${GITHUB_REPO}/contents/src/config/${fileName}`,
+    {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${GITHUB_TOKEN}`,
+        'Content-Type': 'application/json',
+        Accept: 'application/vnd.github.v3+json',
+      },
+      body: JSON.stringify({
+        message: `Update ${fileName}`,
+        content: Buffer.from(content).toString('base64'),
+        sha,
+        branch: GITHUB_BRANCH,
+      }),
+    }
+  );
+}
+
+async function triggerVercelDeploy() {
+  if (!config.VERCEL_DEPLOY_HOOK) return;
+  try {
+    await fetch(config.VERCEL_DEPLOY_HOOK, { method: 'POST' });
+    logger.info('Vercel deploy hook triggered');
+  } catch (err) {
+    logger.warn(`Vercel deploy hook failed: ${err.message}`);
   }
 }
 
 async function createApp() {
-  const writable = canWriteJson();
-
   app = express();
   app.use(express.json());
 
@@ -97,75 +131,114 @@ async function createApp() {
     res.json({ vehicles: getFleet() });
   });
 
-  if (writable) {
-    const GITHUB_EDIT_URL = config.GITHUB_REPO
-      ? `https://github.com/${config.GITHUB_REPO}/edit/master/src/config`
-      : null;
+  app.post('/api/fleet', requireAdminAuth, async (req, res) => {
+    const { vehicleNo, label } = req.body || {};
+    if (!vehicleNo || typeof vehicleNo !== 'string') {
+      return res.status(400).json({ error: 'vehicleNo is required' });
+    }
+    const { GITHUB_TOKEN, GITHUB_REPO, GITHUB_BRANCH } = config;
+    if (!GITHUB_TOKEN || !GITHUB_REPO) {
+      return res.status(503).json({
+        error: 'GitHub token not configured. Add GITHUB_TOKEN to Vercel env vars.',
+      });
+    }
 
-    app.post('/api/landmarks', requireAdminAuth, (req, res) => {
-      const { name, latitude, longitude, radiusMeters } = req.body || {};
-      if (!name || typeof name !== 'string') {
-        return res.status(400).json({ error: 'name is required' });
-      }
-      if (typeof latitude !== 'number' || typeof longitude !== 'number') {
-        return res.status(400).json({ error: 'latitude and longitude must be numbers' });
-      }
-      try {
-        const landmarks = addLandmark({ name: name.trim(), latitude, longitude, radiusMeters });
-        res.json({ landmarks });
-      } catch (err) {
-        res.status(500).json({ error: err.message });
-      }
-    });
+    try {
+      const getRes = await fetch(
+        `https://api.github.com/repos/${GITHUB_REPO}/contents/src/config/fleet.json?ref=${GITHUB_BRANCH}`,
+        { headers: { Authorization: `Bearer ${GITHUB_TOKEN}`, Accept: 'application/vnd.github.v3+json' } }
+      );
+      if (!getRes.ok) throw new Error('Failed to read fleet.json from GitHub');
+      const existing = await getRes.json();
+      const content = JSON.parse(Buffer.from(existing.content, 'base64').toString('utf8'));
 
-    app.delete('/api/landmarks/:index', requireAdminAuth, (req, res) => {
-      const index = Number(req.params.index);
-      try {
-        const landmarks = removeLandmark(index);
-        res.json({ landmarks });
-      } catch (err) {
-        res.status(400).json({ error: err.message });
+      const upper = vehicleNo.trim().toUpperCase();
+      if (!content.vehicles.some((v) => v.vehicleNo === upper)) {
+        content.vehicles.push({ vehicleNo: upper, label: (label || '').trim() });
       }
-    });
 
-    app.post('/api/fleet', requireAdminAuth, (req, res) => {
-      const { vehicleNo, label } = req.body || {};
-      if (!vehicleNo || typeof vehicleNo !== 'string') {
-        return res.status(400).json({ error: 'vehicleNo is required' });
+      const putRes = await fetch(
+        `https://api.github.com/repos/${GITHUB_REPO}/contents/src/config/fleet.json`,
+        {
+          method: 'PUT',
+          headers: {
+            Authorization: `Bearer ${GITHUB_TOKEN}`,
+            'Content-Type': 'application/json',
+            Accept: 'application/vnd.github.v3+json',
+          },
+          body: JSON.stringify({
+            message: `Add bus ${upper}`,
+            content: Buffer.from(JSON.stringify(content, null, 2) + '\n').toString('base64'),
+            sha: existing.sha,
+            branch: GITHUB_BRANCH,
+          }),
+        }
+      );
+      if (!putRes.ok) {
+        const errBody = await putRes.json().catch(() => ({}));
+        throw new Error(errBody.message || 'GitHub write failed');
       }
-      try {
-        const vehicles = addVehicle({ vehicleNo, label });
-        res.json({ vehicles });
-      } catch (err) {
-        res.status(500).json({ error: err.message });
+
+      await triggerVercelDeploy();
+      res.json({ vehicles: content.vehicles });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.delete('/api/fleet/:index', requireAdminAuth, async (req, res) => {
+    const { GITHUB_TOKEN, GITHUB_REPO, GITHUB_BRANCH } = config;
+    if (!GITHUB_TOKEN || !GITHUB_REPO) {
+      return res.status(503).json({
+        error: 'GitHub token not configured. Add GITHUB_TOKEN to Vercel env vars.',
+      });
+    }
+
+    const index = Number(req.params.index);
+    try {
+      const getRes = await fetch(
+        `https://api.github.com/repos/${GITHUB_REPO}/contents/src/config/fleet.json?ref=${GITHUB_BRANCH}`,
+        { headers: { Authorization: `Bearer ${GITHUB_TOKEN}`, Accept: 'application/vnd.github.v3+json' } }
+      );
+      if (!getRes.ok) throw new Error('Failed to read fleet.json from GitHub');
+      const existing = await getRes.json();
+      const content = JSON.parse(Buffer.from(existing.content, 'base64').toString('utf8'));
+
+      if (index < 0 || index >= content.vehicles.length) {
+        return res.status(400).json({ error: 'Vehicle index out of range' });
       }
-    });
+      content.vehicles.splice(index, 1);
 
-    app.delete('/api/fleet/:index', requireAdminAuth, (req, res) => {
-      const index = Number(req.params.index);
-      try {
-        const vehicles = removeVehicle(index);
-        res.json({ vehicles });
-      } catch (err) {
-        res.status(400).json({ error: err.message });
+      const putRes = await fetch(
+        `https://api.github.com/repos/${GITHUB_REPO}/contents/src/config/fleet.json`,
+        {
+          method: 'PUT',
+          headers: {
+            Authorization: `Bearer ${GITHUB_TOKEN}`,
+            'Content-Type': 'application/json',
+            Accept: 'application/vnd.github.v3+json',
+          },
+          body: JSON.stringify({
+            message: `Remove bus at index ${index}`,
+            content: Buffer.from(JSON.stringify(content, null, 2) + '\n').toString('base64'),
+            sha: existing.sha,
+            branch: GITHUB_BRANCH,
+          }),
+        }
+      );
+      if (!putRes.ok) {
+        const errBody = await putRes.json().catch(() => ({}));
+        throw new Error(errBody.message || 'GitHub write failed');
       }
-    });
-  } else {
-    const msg = 'Admin writes are not available in this deployment. Edit the JSON files directly on GitHub.';
-    const ghUrl = config.GITHUB_REPO
-      ? `https://github.com/${config.GITHUB_REPO}/edit/master/src/config`
-      : null;
 
-    app.post(['/api/landmarks', '/api/fleet'], requireAdminAuth, (req, res) => {
-      res.status(503).json({ error: msg, editUrl: ghUrl });
-    });
+      await triggerVercelDeploy();
+      res.json({ vehicles: content.vehicles });
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  });
 
-    app.delete(['/api/landmarks/:index', '/api/fleet/:index'], requireAdminAuth, (req, res) => {
-      res.status(503).json({ error: msg, editUrl: ghUrl });
-    });
-  }
-
-  app.get(['/admin.html', '/admin.js'], requireAdminAuth, (req, res) => {
+  app.get(['/admin.html', '/admin.js', '/add.html', '/add.js'], (req, res) => {
     res.sendFile(path.join(__dirname, '..', 'public', req.path));
   });
 
