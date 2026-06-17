@@ -127,4 +127,22 @@ async function fetchVehicleData(vehicleNo, attempt = 1) {
   }
 }
 
-module.exports = { fetchVehicleData, getToken, clearToken, InvalidVehicleError, ApiUnavailableError };
+async function fetchMultipleVehicles(vehicleNos, concurrency = 10) {
+  const results = [];
+  const queue = [...vehicleNos];
+  async function worker() {
+    while (queue.length) {
+      const vno = queue.shift();
+      try {
+        results.push(await fetchVehicleData(vno));
+      } catch (err) {
+        if (!(err instanceof InvalidVehicleError)) throw err;
+      }
+    }
+  }
+  const workers = Array.from({ length: Math.min(concurrency, vehicleNos.length || 1) }, () => worker());
+  await Promise.all(workers);
+  return results;
+}
+
+module.exports = { fetchVehicleData, fetchMultipleVehicles, getToken, clearToken, InvalidVehicleError, ApiUnavailableError };
