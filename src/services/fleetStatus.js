@@ -1,5 +1,5 @@
 const config = require('../config');
-const { fetchVehicleData } = require('./gsrtcApi');
+const { fetchMultipleVehicles } = require('./gsrtcApi');
 const { reverseGeocode } = require('./geocode');
 const { findNearestLandmark } = require('./landmarks');
 const { getFleet } = require('./fleet');
@@ -12,43 +12,44 @@ function isBhujMundraRoute(routeName) {
   return ROUTE_KEYWORDS.every((keyword) => lower.includes(keyword));
 }
 
+async function enrichVehicle(data) {
+  try {
+    const place = await reverseGeocode(data.latitude, data.longitude);
+    data.placeName = place?.name;
+    data.placeAddress = place?.address;
+    const landmark = findNearestLandmark(data.latitude, data.longitude);
+    data.landmarkName = landmark?.name;
+    data.landmarkDistance = landmark?.distanceMeters;
+  } catch (err) {
+    logger.warn(`enrichVehicle geocode failed: ${err.message}`);
+  }
+  return data;
+}
+
 async function getActiveBhujMundraVehicles() {
+  const results = await fetchMultipleVehicles(config.BHUJ_MUNDRA_FLEET, 5);
   const active = [];
-  for (const vehicleNo of config.BHUJ_MUNDRA_FLEET) {
-    try {
-      const data = await fetchVehicleData(vehicleNo);
-      if (!isBhujMundraRoute(data.routeName)) continue;
-      if (String(data.running) !== '1') continue;
-      const place = await reverseGeocode(data.latitude, data.longitude);
-      data.placeName = place && place.name;
-      data.placeAddress = place && place.address;
-      const landmark = findNearestLandmark(data.latitude, data.longitude);
-      data.landmarkName = landmark && landmark.name;
-      data.landmarkDistance = landmark && landmark.distanceMeters;
-      active.push(data);
-    } catch (err) {
-      logger.warn(`fleetStatus: failed to fetch ${vehicleNo}: ${err.message}`);
-    }
+  for (const data of results) {
+    if (!isBhujMundraRoute(data.routeName)) continue;
+    if (String(data.running) !== '1') continue;
+    active.push(await enrichVehicle(data));
   }
   return active;
 }
 
 async function getFleetLiveData() {
+  const fleet = getFleet();
+  const vehicleNos = fleet.map((v) => v.vehicleNo);
+  if (vehicleNos.length === 0) return [];
+
+  const results = await fetchMultipleVehicles(vehicleNos, 10);
+  const labelMap = {};
+  for (const v of fleet) labelMap[v.vehicleNo] = v.label || '';
+
   const vehicles = [];
-  for (const { vehicleNo, label } of getFleet()) {
-    try {
-      const data = await fetchVehicleData(vehicleNo);
-      data.label = label || '';
-      const place = await reverseGeocode(data.latitude, data.longitude);
-      data.placeName = place && place.name;
-      data.placeAddress = place && place.address;
-      const landmark = findNearestLandmark(data.latitude, data.longitude);
-      data.landmarkName = landmark && landmark.name;
-      data.landmarkDistance = landmark && landmark.distanceMeters;
-      vehicles.push(data);
-    } catch (err) {
-      logger.warn(`fleetStatus: failed to fetch ${vehicleNo}: ${err.message}`);
-    }
+  for (const data of results) {
+    data.label = labelMap[data.vehicleNo] || '';
+    vehicles.push(await enrichVehicle(data));
   }
   return vehicles;
 }
