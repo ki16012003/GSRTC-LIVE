@@ -6,7 +6,6 @@ function toInt(value, fallback) {
 }
 
 const config = {
-  BOT_TOKEN: process.env.BOT_TOKEN || '',
   GSRTC_API_URL: process.env.GSRTC_API_URL || 'https://live.gsrtc.org/api/vehicle/tooltip',
   LOG_LEVEL: process.env.LOG_LEVEL || 'info',
   API_MAX_RETRIES: toInt(process.env.API_MAX_RETRIES, 3),
@@ -18,9 +17,7 @@ const config = {
     .filter(Boolean),
   ADMIN_USER: process.env.ADMIN_USER || 'admin',
   ADMIN_PASS: process.env.ADMIN_PASS || 'admin',
-  GITHUB_TOKEN: process.env.GITHUB_TOKEN || '',
   GITHUB_REPO: process.env.GITHUB_REPO || '',
-  GITHUB_BRANCH: process.env.GITHUB_BRANCH || 'main',
 };
 
 module.exports = config;
