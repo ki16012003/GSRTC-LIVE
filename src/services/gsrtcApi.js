@@ -31,6 +31,10 @@ async function getToken() {
   return tokenPromise;
 }
 
+function clearToken() {
+  authToken = null;
+}
+
 class InvalidVehicleError extends Error {
   constructor(vehicleNo) {
     super(`No live data found for vehicle "${vehicleNo}"`);
@@ -95,15 +99,13 @@ async function fetchVehicleData(vehicleNo, attempt = 1) {
 
     const data = response.data;
     const parsed = parseVehicleData(data);
-    if (!parsed) {
-      throw new InvalidVehicleError(vehicleNo);
-    }
+    if (!parsed) throw new InvalidVehicleError(vehicleNo);
     return parsed;
   } catch (err) {
     if (err instanceof InvalidVehicleError) throw err;
 
     if (err.response?.status === 401) {
-      authToken = null;
+      clearToken();
       if (attempt < 2) {
         logger.warn(`GSRTC API auth expired for ${vehicleNo}, re-logging in...`);
         return fetchVehicleData(vehicleNo, attempt + 1);
@@ -125,31 +127,4 @@ async function fetchVehicleData(vehicleNo, attempt = 1) {
   }
 }
 
-async function fetchMultipleVehicles(vehicleNos, concurrency = 10) {
-  const results = [];
-  const queue = [...vehicleNos];
-  const inFlight = new Set();
-
-  async function worker() {
-    while (queue.length > 0) {
-      const vn = queue.shift();
-      inFlight.add(vn);
-      try {
-        const data = await fetchVehicleData(vn);
-        results.push(data);
-      } catch (err) {
-        if (!(err instanceof InvalidVehicleError)) {
-          logger.warn(`fetchMultiple: ${err.message}`);
-        }
-      } finally {
-        inFlight.delete(vn);
-      }
-    }
-  }
-
-  const workers = Array.from({ length: Math.min(concurrency, vehicleNos.length) }, () => worker());
-  await Promise.all(workers);
-  return results;
-}
-
-module.exports = { fetchVehicleData, fetchMultipleVehicles, InvalidVehicleError, ApiUnavailableError };
+module.exports = { fetchVehicleData, getToken, clearToken, InvalidVehicleError, ApiUnavailableError };

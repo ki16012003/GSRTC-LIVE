@@ -5,6 +5,7 @@ const fs = require('fs');
 const config = require('../src/config');
 const logger = require('../src/utils/logger');
 const { getActiveBhujMundraVehicles, getFleetLiveData } = require('../src/services/fleetStatus');
+const { getToken } = require('../src/services/gsrtcApi');
 const { getAllLandmarks, addLandmark, removeLandmark } = require('../src/services/landmarks');
 const { getFleet, addVehicle, removeVehicle } = require('../src/services/fleet');
 
@@ -73,6 +74,19 @@ async function createApp() {
       logger.error(`/api/fleet/live failed: ${err.message}`);
       res.status(500).json({ error: 'Failed to fetch fleet data' });
     }
+  });
+
+  app.get('/api/token', async (req, res) => {
+    try {
+      const token = await getToken();
+      res.json({ token });
+    } catch (err) {
+      res.status(500).json({ error: 'Failed to get auth token' });
+    }
+  });
+
+  app.get('/api/fleet/list', (req, res) => {
+    res.json({ vehicles: getFleet() });
   });
 
   app.get('/api/landmarks', requireAdminAuth, (req, res) => {

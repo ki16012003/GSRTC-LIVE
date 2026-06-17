@@ -1,15 +1,16 @@
-// Roughly centers the Bhuj-Mundra route (Kutch district, Gujarat).
+const GSRTC_API = 'https://live.gsrtc.org/api/vehicle/tooltip';
+
 const map = L.map('map').setView([23.0, 69.65], 10);
 
-// CartoDB Voyager - clean light style with road labels, closest free
-// alternative to Apple Maps (no API key required).
 L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
   maxZoom: 20,
   attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
 }).addTo(map);
 
-const markers = new Map(); // vehicleNo -> marker
+const markers = new Map();
 const statusEl = document.getElementById('status');
+
+let authToken = null;
 
 function vehicleStatus(v) {
   if (String(v.nocomm) === '1') return 'nosignal';
@@ -17,76 +18,89 @@ function vehicleStatus(v) {
   return 'idle';
 }
 
-function statusLabel(status) {
-  if (status === 'running') return 'Running';
-  if (status === 'nosignal') return 'No GPS signal';
-  return 'Idle';
+async function fetchToken() {
+  const res = await fetch('/api/token');
+  if (!res.ok) throw new Error('Failed to get token');
+  const data = await res.json();
+  authToken = data.token;
 }
 
-function popupHtml(v) {
-  const where = v.landmarkName
-    ? `${v.landmarkName} (~${v.landmarkDistance}m)`
-    : v.placeAddress || v.placeName || v.location || 'Unknown location';
-  return (
-    `<b>${v.label || v.busNo || v.vehicleNo}</b> (${v.vehicleNo})<br>` +
-    `${where}<br>` +
-    `Status: ${statusLabel(vehicleStatus(v))}<br>` +
-    `Speed: ${v.speed} km/h<br>` +
-    `Route: ${v.routeName || 'N/A'}<br>` +
-    `Updated: ${v.receivedDate || 'N/A'}`
-  );
+async function fetchVehicleData(vehicleNo) {
+  const res = await fetch(GSRTC_API, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken}` },
+    body: JSON.stringify({ vehicleNo }),
+  });
+  if (!res.ok) return null;
+  return res.json();
 }
 
 async function refresh() {
-  try {
-    const res = await fetch('/api/fleet/live');
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
-
-    const seen = new Set();
-
-    for (const v of data.vehicles) {
-      seen.add(v.vehicleNo);
-      const latLng = [v.latitude, v.longitude];
-      const status = vehicleStatus(v);
-      const label = v.label || v.busNo || v.vehicleNo;
-
-      if (markers.has(v.vehicleNo)) {
-        const marker = markers.get(v.vehicleNo);
-        marker.setLatLng(latLng);
-        marker.setPopupContent(popupHtml(v));
-        marker.setTooltipContent(label);
-        const tooltipEl = marker.getTooltip().getElement();
-        if (tooltipEl) {
-          tooltipEl.className = `leaflet-tooltip bus-label ${status}`;
-        }
-      } else {
-        const marker = L.marker(latLng)
-          .addTo(map)
-          .bindPopup(popupHtml(v))
-          .bindTooltip(label, {
-            permanent: true,
-            direction: 'top',
-            className: `bus-label ${status}`,
-            offset: [0, -10],
-          });
-        markers.set(v.vehicleNo, marker);
-      }
-    }
-
-    // Remove markers for buses no longer in the configured fleet.
-    for (const [vehicleNo, marker] of markers) {
-      if (!seen.has(vehicleNo)) {
-        map.removeLayer(marker);
-        markers.delete(vehicleNo);
-      }
-    }
-
-    const time = new Date(data.updatedAt).toLocaleTimeString();
-    statusEl.textContent = `${data.vehicles.length} bus(es) tracked — updated ${time}`;
-  } catch (err) {
-    statusEl.textContent = 'Failed to load fleet data';
+  if (!authToken) {
+    try { await fetchToken(); } catch { return; }
   }
+
+  const listRes = await fetch('/api/fleet/list');
+  if (!listRes.ok) return;
+  const { vehicles: fleet } = await listRes.json();
+
+  const results = await Promise.allSettled(
+    fleet.map((v) => fetchVehicleData(v.vehicleNo))
+  );
+
+  const seen = new Set();
+  for (let i = 0; i < results.length; i++) {
+    const r = results[i];
+    if (r.status !== 'fulfilled' || !r.value) continue;
+    const raw = r.value;
+    const lat = parseFloat(raw.latitude);
+    const lon = parseFloat(raw.longitude);
+    if (isNaN(lat) || isNaN(lon)) continue;
+
+    seen.add(raw.vehicleNo);
+    const label = fleet[i].label || '';
+    const latLng = [lat, lon];
+    const status = vehicleStatus(raw);
+    const displayLabel = label || raw.busNo || raw.vehicleNo;
+
+    if (markers.has(raw.vehicleNo)) {
+      const marker = markers.get(raw.vehicleNo);
+      marker.setLatLng(latLng);
+      marker.setPopupContent(popupHtml(raw, label));
+      marker.setTooltipContent(displayLabel);
+    } else {
+      const marker = L.marker(latLng)
+        .addTo(map)
+        .bindPopup(popupHtml(raw, label))
+        .bindTooltip(displayLabel, {
+          permanent: true, direction: 'top',
+          className: `bus-label ${status}`, offset: [0, -10],
+        });
+      markers.set(raw.vehicleNo, marker);
+    }
+  }
+
+  for (const [vehicleNo, marker] of markers) {
+    if (!seen.has(vehicleNo)) {
+      map.removeLayer(marker);
+      markers.delete(vehicleNo);
+    }
+  }
+
+  const time = new Date().toLocaleTimeString();
+  statusEl.textContent = `${markers.size} bus(es) tracked — ${time}`;
+}
+
+function popupHtml(v, label) {
+  const where = v.location || `${v.latitude}, ${v.longitude}`;
+  return (
+    `<b>${label || v.busNo || v.vehicleNo}</b> (${v.vehicleNo})<br>` +
+    `${where}<br>` +
+    `Speed: ${v.speed || 0} km/h<br>` +
+    `Route: ${v.routeName || 'N/A'}<br>` +
+    `Depot: ${v.depotName || 'N/A'}<br>` +
+    `Updated: ${v.receivedDate || 'N/A'}`
+  );
 }
 
 refresh();
