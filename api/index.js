@@ -1,13 +1,12 @@
 const express = require('express');
 const path = require('path');
 const crypto = require('crypto');
-const fs = require('fs');
 const config = require('../src/config');
 const logger = require('../src/utils/logger');
 const { getActiveBhujMundraVehicles, getFleetLiveData } = require('../src/services/fleetStatus');
 const { getToken } = require('../src/services/gsrtcApi');
-const { getAllLandmarks, addLandmark, removeLandmark } = require('../src/services/landmarks');
-const { getFleet, addVehicle, removeVehicle } = require('../src/services/fleet');
+const { getAllLandmarks } = require('../src/services/landmarks');
+const { getFleet } = require('../src/services/fleet');
 
 let app;
 
@@ -35,41 +34,20 @@ function requireAdminAuth(req, res, next) {
   res.status(401).send('Authentication required');
 }
 
-async function pushFileToGitHub(fileName, filePath) {
+async function readFleetFromGitHub() {
   const { GITHUB_TOKEN, GITHUB_REPO, GITHUB_BRANCH } = config;
-  if (!GITHUB_TOKEN || !GITHUB_REPO) return;
-
-  const content = fs.readFileSync(filePath, 'utf8');
-
-  let sha = null;
+  if (!GITHUB_TOKEN || !GITHUB_REPO) return null;
   try {
-    const getRes = await fetch(
-      `https://api.github.com/repos/${GITHUB_REPO}/contents/src/config/${fileName}?ref=${GITHUB_BRANCH}`,
+    const res = await fetch(
+      `https://api.github.com/repos/${GITHUB_REPO}/contents/src/config/fleet.json?ref=${GITHUB_BRANCH}`,
       { headers: { Authorization: `Bearer ${GITHUB_TOKEN}`, Accept: 'application/vnd.github.v3+json' } }
     );
-    if (getRes.ok) {
-      const existing = await getRes.json();
-      sha = existing.sha;
-    }
-  } catch { }
-
-  await fetch(
-    `https://api.github.com/repos/${GITHUB_REPO}/contents/src/config/${fileName}`,
-    {
-      method: 'PUT',
-      headers: {
-        Authorization: `Bearer ${GITHUB_TOKEN}`,
-        'Content-Type': 'application/json',
-        Accept: 'application/vnd.github.v3+json',
-      },
-      body: JSON.stringify({
-        message: `Update ${fileName}`,
-        content: Buffer.from(content).toString('base64'),
-        sha,
-        branch: GITHUB_BRANCH,
-      }),
-    }
-  );
+    if (!res.ok) return null;
+    const data = await res.json();
+    return JSON.parse(Buffer.from(data.content, 'base64').toString('utf8'));
+  } catch {
+    return null;
+  }
 }
 
 async function triggerVercelDeploy() {
@@ -119,16 +97,18 @@ async function createApp() {
     }
   });
 
-  app.get('/api/fleet/list', (req, res) => {
-    res.json({ vehicles: getFleet() });
+  app.get('/api/fleet/list', async (req, res) => {
+    const gh = await readFleetFromGitHub();
+    res.json({ vehicles: gh ? gh.vehicles : getFleet() });
   });
 
   app.get('/api/landmarks', requireAdminAuth, (req, res) => {
     res.json({ landmarks: getAllLandmarks() });
   });
 
-  app.get('/api/fleet', requireAdminAuth, (req, res) => {
-    res.json({ vehicles: getFleet() });
+  app.get('/api/fleet', requireAdminAuth, async (req, res) => {
+    const gh = await readFleetFromGitHub();
+    res.json({ vehicles: gh ? gh.vehicles : getFleet() });
   });
 
   app.post('/api/fleet', requireAdminAuth, async (req, res) => {
@@ -238,7 +218,7 @@ async function createApp() {
     }
   });
 
-  app.get(['/admin.html', '/admin.js', '/add.html', '/add.js'], (req, res) => {
+  app.get(['/admin.html', '/admin.js'], (req, res) => {
     res.sendFile(path.join(__dirname, '..', 'public', req.path));
   });
 
