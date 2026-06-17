@@ -218,8 +218,14 @@ async function createApp() {
     }
   });
 
-  app.get(['/admin.html', '/admin.js'], (req, res) => {
-    res.sendFile(path.join(__dirname, '..', 'public', req.path));
+  app.get(['/admin', '/admin.html'], (req, res) => {
+    res.sendFile(path.join(__dirname, '..', 'public', 'admin.html'));
+  });
+  app.get('/admin.js', (req, res) => {
+    res.sendFile(path.join(__dirname, '..', 'public', 'admin.js'));
+  });
+  app.get('/fleet', (req, res) => {
+    res.sendFile(path.join(__dirname, '..', 'public', 'fleet.html'));
   });
 
   app.use(express.static(path.join(__dirname, '..', 'public')));
