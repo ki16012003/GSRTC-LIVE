@@ -8,14 +8,25 @@ L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r
 }).addTo(map);
 
 const markers = new Map();
+const vehicleCache = new Map();
 const statusEl = document.getElementById('status');
+const searchInput = document.getElementById('search');
+const countEl = document.getElementById('count');
+const fitBtn = document.getElementById('fitBtn');
 
 let authToken = null;
+let allFleet = [];
 
 function vehicleStatus(v) {
   if (String(v.nocomm) === '1') return 'nosignal';
   if (Number(v.speed) > 0 || String(v.running) === '1') return 'running';
   return 'idle';
+}
+
+function formatVehicleNo(v) {
+  if (!v) return v;
+  const m = v.match(/^([A-Za-z]{2})(\d{1,2})([A-Za-z]{1,2})(\d{1,4})$/);
+  return m ? m.slice(1).join('-').toUpperCase() : v;
 }
 
 async function fetchToken() {
@@ -35,6 +46,38 @@ async function fetchVehicleData(vehicleNo) {
   return res.json();
 }
 
+function updateUI() {
+  const q = searchInput.value.trim().toLowerCase();
+  let visible = 0;
+
+  for (const [vehicleNo, marker] of markers) {
+    const v = vehicleCache.get(vehicleNo);
+    if (!v) continue;
+    const haystack = `${v.vehicleNo} ${v.busNo || ''} ${v.routeName || ''} ${v.depotName || ''} ${v.location || ''}`.toLowerCase();
+    const match = !q || haystack.includes(q);
+
+    if (match && !map.hasLayer(marker)) {
+      marker.addTo(map);
+      visible++;
+    } else if (match) {
+      visible++;
+    } else if (map.hasLayer(marker)) {
+      map.removeLayer(marker);
+    }
+  }
+
+  countEl.textContent = `${visible} / ${markers.size} buses`;
+}
+
+function fitAll() {
+  const latLngs = [...markers.values()]
+    .filter((m) => map.hasLayer(m))
+    .map((m) => m.getLatLng());
+  if (latLngs.length === 0) return;
+  if (latLngs.length === 1) map.setView(latLngs[0], 14);
+  else map.fitBounds(L.latLngBounds(latLngs), { padding: [40, 40] });
+}
+
 async function refresh() {
   if (!authToken) {
     try { await fetchToken(); } catch { return; }
@@ -42,10 +85,16 @@ async function refresh() {
 
   const listRes = await fetch('/api/fleet/list');
   if (!listRes.ok) return;
-  const { vehicles: fleet } = await listRes.json();
+  const data = await listRes.json();
+  allFleet = data.vehicles;
+
+  if (allFleet.length === 0) {
+    statusEl.textContent = 'No buses configured in fleet.json';
+    return;
+  }
 
   const results = await Promise.allSettled(
-    fleet.map((v) => fetchVehicleData(v.vehicleNo))
+    allFleet.map((v) => fetchVehicleData(v.vehicleNo))
   );
 
   const seen = new Set();
@@ -58,10 +107,12 @@ async function refresh() {
     if (isNaN(lat) || isNaN(lon)) continue;
 
     seen.add(raw.vehicleNo);
-    const label = fleet[i].label || '';
+    vehicleCache.set(raw.vehicleNo, raw);
+
+    const label = allFleet[i].label || '';
     const latLng = [lat, lon];
     const status = vehicleStatus(raw);
-    const displayLabel = label || raw.busNo || raw.vehicleNo;
+    const displayLabel = label || formatVehicleNo(raw.vehicleNo);
 
     if (markers.has(raw.vehicleNo)) {
       const marker = markers.get(raw.vehicleNo);
@@ -84,24 +135,30 @@ async function refresh() {
     if (!seen.has(vehicleNo)) {
       map.removeLayer(marker);
       markers.delete(vehicleNo);
+      vehicleCache.delete(vehicleNo);
     }
   }
 
+  updateUI();
+
   const time = new Date().toLocaleTimeString();
-  statusEl.textContent = `${markers.size} bus(es) tracked — ${time}`;
+  statusEl.textContent = `Updated ${time}`;
 }
 
 function popupHtml(v, label) {
-  const where = v.location || `${v.latitude}, ${v.longitude}`;
   return (
-    `<b>${label || v.busNo || v.vehicleNo}</b> (${v.vehicleNo})<br>` +
-    `${where}<br>` +
-    `Speed: ${v.speed || 0} km/h<br>` +
+    `<b>${label || formatVehicleNo(v.vehicleNo)}</b><br>` +
+    `No: ${v.vehicleNo}<br>` +
     `Route: ${v.routeName || 'N/A'}<br>` +
     `Depot: ${v.depotName || 'N/A'}<br>` +
+    `Speed: ${v.speed || 0} km/h<br>` +
+    `Location: ${v.location || `${v.latitude}, ${v.longitude}`}<br>` +
     `Updated: ${v.receivedDate || 'N/A'}`
   );
 }
+
+searchInput.addEventListener('input', updateUI);
+fitBtn.addEventListener('click', fitAll);
 
 refresh();
 setInterval(refresh, 30000);
