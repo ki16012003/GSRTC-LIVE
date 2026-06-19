@@ -1,220 +1,146 @@
-# GSRTC Live Vehicle Tracking Telegram Bot
+# GSRTC Live 3D Bus Map
 
-A production-ready Node.js Telegram bot that tracks GSRTC buses in real time
-using the public live-tracking API at `https://live.gsrtc.org/api/vehicle/tooltip`.
+A 24/7 background tracking system for the GSRTC bus fleet, visualized on a live CesiumJS 3D globe. The backend continuously polls the GSRTC vehicle API for every bus stored in the database and pushes position updates to connected browsers over Socket.IO — no manual refresh, no per-client polling, no Docker, no Python.
 
-Multiple users can track different (or the same) buses simultaneously. The
-bot polls the GSRTC API every `POLL_INTERVAL` seconds per tracked vehicle,
-detects meaningful changes (position, speed, ignition, running state), and
-pushes live updates and alerts to Telegram automatically.
-
-## Features
-
-- `/track <vehicleNumber>` — start live tracking of a bus
-- `/status` — current tracking status
-- `/location` — fetch current coordinates + Telegram location pin + Maps link
-- `/route` — current route information
-- `/stoptrack` — stop tracking, see total tracking duration
-- Automatic alerts:
-  - ▶ Bus Started Moving
-  - 🛑 Bus Stopped
-  - ⚠ GPS Communication Lost
-  - 🔧 Vehicle Under Maintenance
-- Admin commands: `/activeusers`, `/activevehicles`, `/broadcast <message>`
-- SQLite persistence (users, tracking sessions, vehicle history)
-- Automatic retries on GSRTC API / network failures
-- Resumes all active tracking sessions automatically on restart
-- Structured logging (Winston, daily-rotating files)
-- PM2 process management with auto-restart
-
-## Project Structure
+## Architecture
 
 ```
-/src
-  /bot          - Telegram bot setup & wiring
-  /commands     - One file per bot command
-  /config       - Environment/config loader
-  /database     - SQLite schema, connection, and queries
-  /services     - GSRTC API client and the tracking/polling engine
-  /utils        - Logger, formatters, validators, geo helpers
-  app.js        - Entry point (Express health server + bot + tracker)
-ecosystem.config.js  - PM2 process configuration
-.env.example          - Environment variable template
-data/                  - SQLite database file (gitignored)
-logs/                  - Log files (gitignored)
+backend/                  Node.js + Express + Socket.IO + SQLite
+  src/
+    config/               Env-driven configuration with sane defaults
+    database/              SQLite schema + connection (node:sqlite)
+    services/
+      gsrtcApi.js          GSRTC login + vehicle tooltip client (retry/timeout)
+      busService.js        Bus CRUD, validation, search, stats
+      settingsService.js   Runtime-tunable settings (DB-backed, no restart needed)
+      importService.js     Bulk import parsing (paste / txt / csv / xlsx)
+      logService.js        DB-backed event log
+    tracking-engine/
+      engine.js             24/7 polling loop: worker pool, queue, retry, status classification
+    socket/                Socket.IO emit helpers
+    routes/                REST API (buses, admin, settings, stats)
+    middleware/auth.js     HTTP Basic Auth for /api/admin/*
+    server.js               Entry point — starts HTTP server, Socket.IO, tracking engine
+
+frontend/                 Next.js 15 (App Router) + TypeScript + Tailwind v4
+  src/
+    app/
+      page.tsx              Full-screen live 3D map
+      admin/page.tsx         Bulk import + bus management
+      settings/page.tsx      Tracking engine / map settings
+    components/
+      map/CesiumMap.tsx      Imperative CesiumJS viewer, animated markers
+      TopBar.tsx, BusInfoPanel.tsx, AdminLoginGate.tsx
+      ui/                    Small shadcn-style primitives (button, card, input, ...)
+    lib/                    REST client, Socket.IO client, types
+
+ecosystem.config.js       PM2 process definitions for both apps
 ```
 
-## Requirements
+## How tracking works
 
-- Node.js >= 18
-- npm
-- A Telegram bot token from [@BotFather](https://t.me/BotFather)
-- (Production) [PM2](https://pm2.keymetrics.io/) — `npm i -g pm2`
+1. The tracking engine loads every bus with `tracking_enabled = 1` from SQLite each cycle (so newly imported buses are picked up automatically, no restart required).
+2. A worker pool (configurable count) pulls vehicle numbers off a queue and calls the GSRTC API concurrently.
+3. Each result updates SQLite and is broadcast via Socket.IO (`bus:update`). Failures are logged and retried; a bus is marked `offline` only after it has been unreachable for `offlineAfterSeconds`. One bus failing never stops the cycle.
+4. The cycle reschedules itself using the *current* settings (read fresh from the DB each time), so changing the interval/worker count/retry count from the Settings page takes effect on the very next cycle.
+
+Bus status is classified as:
+- **moving** — speed above the idle threshold
+- **idle** — low speed, but not stationary long enough to count as stopped
+- **stopped** — low speed and unchanged position for `stoppedAfterSeconds`
+- **offline** — no successful update for `offlineAfterSeconds`
 
 ## Installation
 
+### Prerequisites
+- Node.js 18+ (uses the built-in `node:sqlite` module — no native build tools / Visual Studio required)
+- npm
+
+### 1. Backend
+
 ```bash
-git clone <this-repo>
-cd gsrtc
+cd backend
 npm install
-cp .env.example .env
-```
-
-Edit `.env`:
-
-```ini
-BOT_TOKEN=123456789:your-telegram-bot-token
-ADMIN_ID=123456789          # your numeric Telegram chat id
-POLL_INTERVAL=60
-```
-
-> Get your numeric chat ID by messaging [@userinfobot](https://t.me/userinfobot) on Telegram.
-
-## Running
-
-### Development
-
-```bash
-npm run dev
-```
-
-### Production (plain Node)
-
-```bash
+copy .env.example .env      # Windows; use `cp` on macOS/Linux
 npm start
 ```
 
-### Production (PM2 — recommended)
+The server listens on `PORT` (default `4000`), auto-creates the SQLite database at `backend/database/gsrtc.db`, and starts the tracking engine immediately.
+
+### 2. Frontend
 
 ```bash
-npm i -g pm2
-npm run pm2:start     # starts the bot under PM2
-pm2 save              # persist process list
-pm2 startup           # generate OS startup script (run the printed command)
-
-npm run pm2:logs      # tail logs
-npm run pm2:restart   # restart after code/config changes
-npm run pm2:stop      # stop the bot
+cd frontend
+npm install
+copy .env.example .env.local
+npm run dev      # development
+# or
+npm run build && npm start    # production
 ```
 
-PM2 will automatically restart the bot if it crashes (`autorestart: true`,
-`max_restarts: 10`, 5s restart delay) and on server reboot once `pm2 save`
-and `pm2 startup` have been configured.
+Open `http://localhost:3000`.
 
-## Database
+> Cesium's static assets (Workers/Assets/Widgets) are copied into `frontend/public/cesium` automatically before `dev`/`build` via `scripts/copy-cesium-assets.js`.
 
-SQLite database file is created automatically at the path configured by
-`DB_PATH` (default `./data/gsrtc_bot.db`), with WAL mode enabled for safe
-concurrent access. Schema (`src/database/schema.sql`) creates three tables:
+> `NEXT_PUBLIC_CESIUM_ION_TOKEN` is optional. Without it, the map uses OpenStreetMap imagery and flat ellipsoid terrain (no signup required). With a free token from https://ion.cesium.com/tokens, it upgrades to Cesium World Terrain, Bing satellite imagery, and OSM 3D Buildings.
 
-- **users** — `chat_id`, `username`, `first_name`, `is_admin`, `created_at`
-- **tracking_sessions** — one row per tracking session: `chat_id`,
-  `vehicle_number`, `start_time`, `end_time`, last known
-  latitude/longitude/speed/direction/ignition/running/nocomm/maintenance,
-  `tracking_status` (`active`/`stopped`)
-- **vehicle_history** — a row per detected state change for a session
-  (position, speed, direction, ignition, running, nocomm, maintenance)
+### 3. Add buses to track
 
-No manual migration step is needed — the schema is applied automatically on
-startup (`CREATE TABLE IF NOT EXISTS ...`).
-
-## Tracking Engine
-
-- One polling timer runs per **unique vehicle number** (shared across all
-  users tracking that bus), every `POLL_INTERVAL` seconds.
-- A live update message is sent only when something meaningful changed:
-  latitude/longitude, speed, running state, or ignition — **and** either the
-  bus moved at least `MOVE_THRESHOLD_METERS` (default 100m) or a non-position
-  field (speed/running/ignition) changed. This avoids spamming users with GPS
-  jitter while a bus is parked.
-- Alerts (started moving, stopped, GPS lost, under maintenance) are evaluated
-  independently every poll, regardless of distance moved.
-- All polling timers are restored automatically on process restart by reading
-  active sessions from SQLite.
-
-## Error Handling
-
-- **Invalid vehicle number** — GSRTC returns no usable location data → user
-  gets a clear "vehicle not found" message, no session is created.
-- **GSRTC API failure / timeout** — automatic retries with backoff
-  (`API_MAX_RETRIES`, `API_RETRY_DELAY`, `API_TIMEOUT`). If all retries fail,
-  the poll is skipped and logged; tracking continues on the next cycle.
-- **Telegram API errors** (e.g. user blocked the bot) — caught and logged per
-  message, never crash the polling loop.
-- **Database errors** — caught, logged with context, and re-thrown so calling
-  command handlers can show a friendly error message.
-- **Uncaught exceptions / unhandled rejections** — logged, process kept alive
-  (PM2 provides the restart safety net for unrecoverable cases).
-
-## Logging
-
-Winston writes daily-rotating logs to `LOG_DIR` (default `./logs`):
-
-- `combined-YYYY-MM-DD.log` — all log levels
-- `error-YYYY-MM-DD.log` — errors only
-
-Logs are retained for 14 days / capped at 10MB per file. In non-production
-(`NODE_ENV !== 'production'`), logs are also printed to the console.
-
-## Security Best Practices
-
-- **Never commit `.env`** — it's already in `.gitignore`. Only commit
-  `.env.example`.
-- **Restrict admin commands** — `/activeusers`, `/activevehicles`, and
-  `/broadcast` only respond to the chat ID in `ADMIN_ID`.
-- **Run as a non-root user** in production, and restrict filesystem
-  permissions on `data/` and `logs/` to that user.
-- **Keep dependencies updated** — run `npm audit` periodically.
-- **Validate all user input** — vehicle numbers are normalized and validated
-  against a strict pattern (`src/utils/validators.js`) before being sent to
-  the GSRTC API.
-- **Rotate your bot token** via @BotFather if it is ever exposed, and update
-  `.env` + restart the bot (`pm2 restart gsrtc-tracking-bot`).
-- **Rate limiting** — the per-vehicle polling design naturally limits load on
-  the GSRTC API regardless of how many users are tracking the same bus.
-
-### A note on `npm audit`
-
-`node-telegram-bot-api@0.66.0` pulls in a deprecated `request`-based HTTP
-client, which `npm audit` flags for vulnerabilities in `form-data`, `qs`,
-`tough-cookie`, and `uuid`. These transitive dependencies are only used
-internally by the library to call `api.telegram.org` with your bot token —
-this bot never feeds attacker-controlled multipart bodies, cookies, or query
-strings through them, so practical exploitability here is low. The fix
-(`node-telegram-bot-api@1.x`) is a very recent ESM-only TypeScript rewrite
-with a different module/API surface; re-evaluate migrating to it (or to
-`grammy`/`telegraf`) once it stabilizes.
-
-## Health Check
-
-An Express server exposes a health endpoint for uptime monitoring:
+Open `http://localhost:3000/admin` (default login `admin` / `admin`, set via `ADMIN_USER`/`ADMIN_PASS` in `backend/.env`) and paste/upload vehicle numbers, e.g.:
 
 ```
-GET http://localhost:<PORT>/health
+GJ18Z6224
+GJ18Z5511
+GJ18Z9001
 ```
 
-```json
-{
-  "status": "ok",
-  "uptimeSeconds": 1234,
-  "activeSessions": 3,
-  "trackedVehicles": ["GJ18Z6224", "GJ01AB1234"]
-}
+Buses appear on the map and begin tracking immediately — no restart needed.
+
+## Running 24/7 with PM2 (Windows)
+
+```bash
+npm install -g pm2
+cd frontend && npm run build && cd ..
+pm2 start ecosystem.config.js
+pm2 save
+pm2 startup            # follow the printed instructions to run PM2 on boot
 ```
 
-## Environment Variables
+Useful commands: `pm2 status`, `pm2 logs gsrtc-backend`, `pm2 restart gsrtc-backend`, `pm2 monit`.
 
-| Variable                | Default                                     | Description                                  |
-| ------------------------ | -------------------------------------------- | --------------------------------------------- |
-| `BOT_TOKEN`             | _(required)_                                | Telegram bot token from @BotFather           |
-| `ADMIN_ID`              | _(required)_                                | Numeric chat ID with admin command access    |
-| `POLL_INTERVAL`         | `60`                                         | Seconds between GSRTC API polls per vehicle  |
-| `GSRTC_API_URL`         | `https://live.gsrtc.org/api/vehicle/tooltip` | GSRTC tooltip API endpoint                   |
-| `MOVE_THRESHOLD_METERS` | `100`                                        | Minimum movement (m) to trigger a live update |
-| `DB_PATH`               | `./data/gsrtc_bot.db`                       | SQLite database file path                    |
-| `LOG_DIR`               | `./logs`                                     | Log file directory                           |
-| `LOG_LEVEL`             | `info`                                       | Winston log level                            |
-| `PORT`                  | `3000`                                       | Health-check HTTP server port                |
-| `API_MAX_RETRIES`       | `3`                                          | Max retries for GSRTC API calls              |
-| `API_RETRY_DELAY`       | `2000`                                       | Base delay (ms) between retries              |
-| `API_TIMEOUT`           | `10000`                                      | GSRTC API request timeout (ms)               |
+## Configuration reference
+
+All tracking parameters are overridable two ways:
+- **Startup defaults**: `backend/.env` (see `.env.example`)
+- **Live overrides**: the Settings page (`/settings`), stored in the `settings` SQLite table and read fresh every tracking cycle — no restart required.
+
+| Setting | Default | Description |
+|---|---|---|
+| `TRACK_INTERVAL_SECONDS` | 4 | Seconds between polling cycles |
+| `WORKER_COUNT` | 8 | Concurrent GSRTC API requests |
+| `API_MAX_RETRIES` | 3 | Retries per failed vehicle request |
+| `API_TIMEOUT` | 10000 | Per-request timeout (ms) |
+| `OFFLINE_AFTER_SECONDS` | 120 | Time without data before marking a bus offline |
+| `IDLE_SPEED_THRESHOLD` | 5 | km/h below which a bus is idle/stopped, not moving |
+| `STOPPED_AFTER_SECONDS` | 300 | Low-speed duration before a bus is "stopped" rather than "idle" |
+
+## REST API
+
+| Endpoint | Auth | Description |
+|---|---|---|
+| `GET /api/buses` | — | All buses |
+| `GET /api/buses/search?q=` | — | Search by vehicle/bus/route/depot |
+| `GET /api/stats` | — | Fleet counts + last update time |
+| `GET /api/settings` / `PUT /api/settings` | — | Read/update runtime settings |
+| `POST /api/admin/buses/import` | Basic | Import `{ text }` or `{ vehicleNos }` |
+| `POST /api/admin/buses/import-file` | Basic | Import via multipart `file` (txt/csv/xlsx) |
+| `POST /api/admin/buses/delete` | Basic | `{ vehicleNos }` |
+| `POST /api/admin/buses/enable` / `disable` | Basic | `{ vehicleNos }` |
+| `GET /api/admin/logs` | Basic | Recent system log entries |
+
+## Socket.IO events (server → client)
+
+- `bus:update` — a single bus's live data changed
+- `bus:added` — buses were imported
+- `bus:removed` — buses were deleted
+- `stats:update` — fleet-wide counters changed

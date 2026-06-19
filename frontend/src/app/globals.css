@@ -1,0 +1,164 @@
+@import "tailwindcss";
+@import "leaflet/dist/leaflet.css";
+
+:root {
+  --background: #f4f5f7;
+  --foreground: #1f2937;
+  --surface: #ffffff;
+  --accent: #ea580c;
+  --accent-2: #fb923c;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+* {
+  border-color: rgba(0, 0, 0, 0.08);
+}
+
+html {
+  color-scheme: light;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans), Arial, Helvetica, sans-serif;
+}
+
+::selection {
+  background: rgba(234, 88, 12, 0.25);
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: 8px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.25);
+}
+
+/* Light card surface used throughout admin/settings/info panels */
+.glass-panel {
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  box-shadow: 0 4px 20px rgba(15, 23, 42, 0.1);
+}
+
+.app-bg {
+  background:
+    radial-gradient(circle at 15% 0%, rgba(251, 146, 60, 0.12), transparent 40%),
+    radial-gradient(circle at 85% 100%, rgba(234, 88, 12, 0.08), transparent 45%),
+    var(--background);
+}
+
+.text-gradient {
+  background: linear-gradient(135deg, #fb923c, #ea580c);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.brand-gradient {
+  background: linear-gradient(135deg, #fb923c, #ea580c);
+}
+
+/* ---- Leaflet bus markers ---- */
+.bus-marker-wrap {
+  background: transparent !important;
+  border: none !important;
+}
+
+.bus-marker {
+  position: relative;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 17px;
+  border: 2px solid #fff;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+  transition: transform 0.9s linear;
+}
+
+.bus-pulse {
+  position: absolute;
+  inset: -2px;
+  border-radius: 50%;
+  border: 2px solid;
+  animation: bus-pulse-ring 1.6s ease-out infinite;
+}
+
+@keyframes bus-pulse-ring {
+  0% {
+    transform: scale(1);
+    opacity: 0.9;
+  }
+  100% {
+    transform: scale(1.9);
+    opacity: 0;
+  }
+}
+
+.leaflet-tooltip.bus-label {
+  background: #9ca3af;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 2px 7px;
+  font-weight: 600;
+  font-size: 11px;
+  white-space: nowrap;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+}
+.leaflet-tooltip.bus-label.status-moving {
+  background: #16a34a;
+}
+.leaflet-tooltip.bus-label.status-idle {
+  background: #f59e0b;
+}
+.leaflet-tooltip.bus-label.status-stopped {
+  background: #ef4444;
+}
+.leaflet-tooltip.bus-label.status-offline {
+  background: #9ca3af;
+}
+.leaflet-tooltip.bus-label::before {
+  display: none;
+}
+.bus-route {
+  font-size: 10px;
+  font-weight: 400;
+  opacity: 0.9;
+  display: block;
+  margin-top: 1px;
+}
+
+/* ---- Loading screen ---- */
+.loader-bus {
+  font-size: 56px;
+  animation: bus-bob 1s ease-in-out infinite alternate;
+}
+@keyframes bus-bob {
+  from {
+    transform: translateY(-6px);
+  }
+  to {
+    transform: translateY(6px);
+  }
+}

@@ -1,8 +1,12 @@
-node_modules
+node_modules/
 .env
 .env.local
+backend/database/*.db
+backend/database/*.db-journal
+backend/database/*.db-wal
+backend/database/*.db-shm
+backend/logs/
+frontend/.next/
+frontend/public/cesium/
 logs/
 *.log
-.vercel
-
-.vercel
